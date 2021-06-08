@@ -14,6 +14,7 @@ import Data.SyncState as SyncState exposing (SyncState)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
+import Util.Mouse as Mouse
 import Icons
 import Locale exposing (Helpers)
 import Ports
@@ -61,6 +62,7 @@ type Msg
     = GotSyncState SyncState
     | SyncStart ( String, String )
     | GoToCozy
+    | GoToFullCozy
     | GoToFolder
     | GoToTab Page
     | GoToStrTab String
@@ -118,7 +120,10 @@ update msg model =
             ( { model | settings = settings }, Cmd.map SettingsMsg cmd )
 
         GoToCozy ->
-            ( model, Ports.gotocozy () )
+            ( model, Ports.gotocozy False )
+
+        GoToFullCozy ->
+            ( model, Ports.gotocozy True )
 
         GoToFolder ->
             ( model, Ports.gotofolder () )
@@ -219,9 +224,17 @@ viewBottomBar helpers =
             ]
         , a
             [ href "#"
-            , onClick GoToCozy
+            , Mouse.onCtrlClick handleGoToCozy
             ]
             [ Icons.globe 48 False
             , text (helpers.t "Bar GoToCozy")
             ]
         ]
+
+handleGoToCozy : Mouse.EventWithCtrl -> Msg
+handleGoToCozy mouseEvent =
+    if mouseEvent.ctrl then
+        GoToFullCozy
+
+    else
+        GoToCozy
