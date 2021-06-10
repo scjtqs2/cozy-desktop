@@ -35,11 +35,11 @@ describe('remote.Remote', function() {
 
   before('instanciate config', configHelpers.createConfig)
   before('register OAuth client', configHelpers.registerClient)
-  before('instanciate pouch', pouchHelpers.createDatabase)
-  before('prepare builders', function() {
+  beforeEach('instanciate pouch', pouchHelpers.createDatabase)
+  beforeEach('prepare builders', function() {
     builders = new Builders({ cozy, pouch: this.pouch })
   })
-  before('instanciate remote', function() {
+  beforeEach('instanciate remote', function() {
     this.prep = sinon.createStubInstance(Prep)
     this.events = new EventEmitter()
     this.remote = new Remote(this)
@@ -55,8 +55,13 @@ describe('remote.Remote', function() {
       .name('couchdb-folder')
       .inRootDir()
       .create()
+    await builders
+      .metadir()
+      .fromRemote(couchdbFolder)
+      .upToDate()
+      .create()
   })
-  after('clean pouch', pouchHelpers.cleanDatabase)
+  afterEach('clean pouch', pouchHelpers.cleanDatabase)
   after('clean config directory', configHelpers.cleanConfig)
 
   describe('constructor', () => {
@@ -207,10 +212,10 @@ describe('remote.Remote', function() {
   })
 
   describe('addFolderAsync', () => {
-    it('adds a folder to couchdb', async function() {
+    it('adds a folder on the remote Cozy', async function() {
       const doc = builders
         .metadir()
-        .path('couchdb-folder/folder-1')
+        .path('folder-1')
         .sides({ local: 1 })
         .updatedAt(timestamp.build(2017, 2, 14, 15, 3, 27))
         .build()
@@ -221,7 +226,7 @@ describe('remote.Remote', function() {
 
       const folder = await cozy.files.statById(doc.remote._id)
       should(folder.attributes).have.properties({
-        path: '/couchdb-folder/folder-1',
+        path: '/folder-1',
         name: 'folder-1',
         type: 'directory'
       })
@@ -821,6 +826,11 @@ describe('remote.Remote', function() {
           .name('moved-to')
           .inRootDir()
           .create()
+        await builders
+          .metadir()
+          .fromRemote(newDir)
+          .upToDate()
+          .create()
         const remoteDoc = await builders
           .remoteFile()
           .name('cat6.jpg')
@@ -867,56 +877,24 @@ describe('remote.Remote', function() {
           .createdAt(2018, 1, 2, 5, 31, 30, 564)
           .updatedAt(2018, 1, 2, 5, 31, 30, 564)
           .create()
-        const old = builders
+        const old = await builders
           .metadir()
           .fromRemote(created)
           .changedSide('local')
-          .build()
-        const doc = builders
+          .create()
+        const doc = await builders
           .metadir()
           .moveFrom(old)
           .path('couchdb-folder/folder-5')
           .updatedAt('2018-07-31T05:37:43.770Z')
-          .build()
+          .create()
+
         await this.remote.moveAsync(doc, old)
+
         const folder = await cozy.files.statById(doc.remote._id)
         should(folder.attributes).have.properties({
           dir_id: couchdbFolder._id,
           name: 'folder-5',
-          type: 'directory'
-        })
-        should(timestamp.roundedRemoteDate(folder.attributes.updated_at)).equal(
-          doc.updated_at
-        )
-      })
-
-      it('adds a folder to the Cozy if the folder does not exist', async function() {
-        const couchdbFolder = await cozy.files.statByPath('/couchdb-folder')
-        const created = await builders
-          .remoteDir()
-          .name('folder-6')
-          .inDir({ _id: couchdbFolder._id, path: '/couchdb-folder' })
-          .createdAt(2018, 1, 2, 5, 31, 30, 564)
-          .updatedAt(2018, 1, 2, 5, 31, 30, 564)
-          .create()
-        const old = builders
-          .metadir()
-          .fromRemote(created)
-          .changedSide('local')
-          .build()
-        const doc = builders
-          .metadir()
-          .moveFrom(old)
-          .path('couchdb-folder/folder-7')
-          .updatedAt('2018-07-31T05:37:43.770Z')
-          .build()
-
-        await this.remote.moveAsync(doc, old)
-
-        const folder = await cozy.files.statById(doc.remote._id)
-        should(folder.attributes).have.properties({
-          dir_id: couchdbFolder._id,
-          name: 'folder-7',
           type: 'directory'
         })
         should(timestamp.roundedRemoteDate(folder.attributes.updated_at)).equal(
@@ -997,6 +975,11 @@ describe('remote.Remote', function() {
           .remoteDir()
           .name('moved-to')
           .inRootDir()
+          .create()
+        await builders
+          .metadir()
+          .fromRemote(newDir)
+          .upToDate()
           .create()
 
         existingRemote = await builders
@@ -1250,10 +1233,10 @@ describe('remote.Remote', function() {
   })
 
   describe('ping', () => {
-    before(function() {
+    beforeEach(function() {
       sinon.stub(this.remote.remoteCozy, 'diskUsage')
     })
-    after(function() {
+    afterEach(function() {
       this.remote.remoteCozy.diskUsage.restore()
     })
 
@@ -1337,13 +1320,13 @@ describe('remote.Remote', function() {
 describe('remote', function() {
   describe('.dirAndName()', () => {
     it('returns the remote path and name', function() {
-      should(remote.dirAndName('foo')).deepEqual(['/', 'foo'])
+      should(remote.dirAndName('foo')).deepEqual(['.', 'foo'])
       should(remote.dirAndName(path.normalize('foo/bar'))).deepEqual([
-        '/foo',
+        'foo',
         'bar'
       ])
       should(remote.dirAndName(path.normalize('foo/bar/baz'))).deepEqual([
-        '/foo/bar',
+        'foo/bar',
         'baz'
       ])
     })
