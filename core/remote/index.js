@@ -7,7 +7,6 @@
 const autoBind = require('auto-bind')
 const Promise = require('bluebird')
 const path = require('path')
-const { posix, sep } = path
 
 const { isNote } = require('../utils/notes')
 const logger = require('../utils/logger')
@@ -147,17 +146,7 @@ class Remote /*:: implements Reader, Writer */ {
       )
       metadata.updateRemote(doc, dir)
     } catch (err) {
-      if (err.status !== 409) {
-        throw err
-      }
-
-      // TODO: stop linking docs like this. Throw the error and let the remote
-      // watcher do its job.
-      log.info({ path }, 'Folder already exists')
-      const remotePath = '/' + posix.join(...doc.path.split(sep))
-      const dir = await this.remoteCozy.findDirectoryByPath(remotePath)
-      metadata.updateRemote(doc, dir)
-      return this.updateFolderAsync(doc)
+      throw err
     }
   }
 
@@ -165,6 +154,9 @@ class Remote /*:: implements Reader, Writer */ {
     const { path } = doc
     log.info({ path }, 'Uploading new file...')
     const stopMeasure = measureTime('RemoteWriter#addFile')
+
+    const [parentPath, name] = dirAndName(path)
+    const parent = await this.findDirectoryByPath(parentPath)
 
     let stream
     try {
@@ -177,9 +169,6 @@ class Remote /*:: implements Reader, Writer */ {
       }
       throw err
     }
-
-    const [parentPath, name] = dirAndName(path)
-    const parent = await this.findDirectoryByPath(parentPath)
 
     const created = await this.remoteCozy.createFile(stream, {
       ...newDocumentAttributes(name, parent._id, doc.updated_at),
@@ -282,18 +271,7 @@ class Remote /*:: implements Reader, Writer */ {
       )
       metadata.updateRemote(doc, newRemoteDoc)
     } catch (err) {
-      if (err.status !== 404) {
-        throw err
-      }
-
-      log.warn({ path }, "Directory doesn't exist anymore. Recreating it...")
-      const [newParentPath, newName] = dirAndName(path)
-      const newParent = await this.findDirectoryByPath(newParentPath)
-
-      const newRemoteDoc = await this.remoteCozy.createDirectory(
-        newDocumentAttributes(newName, newParent._id, doc.updated_at)
-      )
-      metadata.updateRemote(doc, newRemoteDoc)
+      throw err
     }
   }
 
