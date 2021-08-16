@@ -17,6 +17,7 @@ const bluebird = require('bluebird')
 const { TMP_DIR_NAME } = require('./constants')
 const { NOTE_MIME_TYPE } = require('../remote/constants')
 const stater = require('./stater')
+const conflicts = require('../utils/conflicts')
 const metadata = require('../metadata')
 const { hideOnWindows } = require('../utils/fs')
 const watcher = require('./watcher')
@@ -32,7 +33,12 @@ import type { Config } from '../config'
 import type { Reader } from '../reader'
 import type { Ignore } from '../ignore'
 import type { AtomEventsDispatcher } from './atom/dispatch'
-import type { SavedMetadata, DocType } from '../metadata'
+import type {
+  DocType,
+  Metadata,
+  MetadataLocalInfo,
+  SavedMetadata
+} from '../metadata'
 import type { Pouch } from '../pouch'
 import type Prep from '../prep'
 import type { Writer } from '../writer'
@@ -153,7 +159,9 @@ class Local /*:: implements Reader, Writer */ {
     }
   }
 
-  async updateMetadataAsync(doc /*: SavedMetadata */) /*: Promise<void> */ {
+  async updateMetadataAsync /*::<T: SavedMetadata|Metadata> */(
+    doc /*: T */
+  ) /*: Promise<void> */ {
     let filePath = this.abspath(doc.path)
 
     if (doc.docType === 'file') {
@@ -449,17 +457,40 @@ class Local /*:: implements Reader, Writer */ {
     }
   }
 
-  async createBackupCopyAsync(
-    doc /*: SavedMetadata */
-  ) /*: Promise<SavedMetadata> */ {
-    const backupPath = `${doc.path}.bck`
-    await fse.copy(
-      path.join(this.syncPath, doc.path),
-      path.join(this.syncPath, backupPath)
+  // Resolve the conflict created by the changes stored in `newMetadata` by
+  // renaming its local version with a conflict suffix so `newMetadata` can be
+  // saved separately in PouchDB.
+  async resolveConflict(
+    newMetadata /*: Metadata */
+  ) /*: Promise<?MetadataLocalInfo> */ {
+    // Find conflicting document on local filesystem
+    const hasConflict = await fse.exists(this.abspath(newMetadata.path))
+    if (!hasConflict) return
+
+    // Generate a new name with a conflict suffix for the local document
+    const oldpath = newMetadata.path
+    const newName = path.basename(
+      conflicts.generateConflictPath(newMetadata.path)
     )
-    const copy = _.cloneDeep(doc)
-    copy.path = backupPath
-    return copy
+    const newPath = path.join(path.dirname(newMetadata.path), newName)
+    log.info(
+      {
+        path: newPath,
+        oldpath
+      },
+      'Resolving local conflict...'
+    )
+
+    const conflict = {
+      ..._.clone(newMetadata),
+      path: newPath
+    }
+
+    await fs.rename(this.abspath(oldpath), this.abspath(newPath))
+    await this.updateMetadataAsync(conflict)
+    metadata.updateLocal(conflict)
+
+    return conflict.local
   }
 }
 

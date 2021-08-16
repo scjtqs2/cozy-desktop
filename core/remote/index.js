@@ -25,7 +25,12 @@ import type EventEmitter from 'events'
 import type { SideName } from '../side'
 import type { Readable } from 'stream'
 import type { Config } from '../config'
-import type { SavedMetadata, MetadataRemoteInfo, MetadataRemoteDir } from '../metadata'
+import type {
+  Metadata,
+  MetadataRemoteInfo,
+  MetadataRemoteDir,
+  SavedMetadata
+} from '../metadata'
 import type { Pouch } from '../pouch'
 import type Prep from '../prep'
 import type { RemoteDoc } from './document'
@@ -73,7 +78,7 @@ const ROOT_DIR /*: MetadataRemoteDir */ = {
 class Remote /*:: implements Reader, Writer */ {
   /*::
   name: SideName
-  other: Reader
+  other: Reader & Writer
   config: Config
   pouch: Pouch
   events: EventEmitter
@@ -425,9 +430,12 @@ class Remote /*:: implements Reader, Writer */ {
     return dir.remote
   }
 
-  async resolveRemoteConflict(
-    newMetadata /*: SavedMetadata */
-  ) /*: Promise<void> */ {
+  // Resolve the conflict created by the changes stored in `newMetadata` by
+  // renaming its remote version with a conflict suffix so `newMetadata` can be
+  // saved separately in PouchDB.
+  async resolveConflict(
+    newMetadata /*: Metadata */
+  ) /*: Promise<?MetadataRemoteInfo> */ {
     // Find conflicting document on remote Cozy
     const remoteDoc = await this.findDocByPath(newMetadata.path)
     if (!remoteDoc) return
@@ -436,9 +444,10 @@ class Remote /*:: implements Reader, Writer */ {
     const newName = path.basename(
       conflicts.generateConflictPath(newMetadata.path)
     )
+    const newPath = path.join(path.dirname(newMetadata.path), newName)
     log.info(
       {
-        path: path.join(path.dirname(newMetadata.path), newName),
+        path: newPath,
         oldpath: newMetadata.path
       },
       'Resolving remote conflict...'
@@ -455,7 +464,11 @@ class Remote /*:: implements Reader, Writer */ {
       ifMatch: remoteDoc._rev
     }
 
-    await this.remoteCozy.updateAttributesById(remoteDoc._id, attrs, opts)
+    return await this.remoteCozy.updateAttributesById(
+      remoteDoc._id,
+      attrs,
+      opts
+    )
   }
 }
 

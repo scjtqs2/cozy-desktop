@@ -1264,7 +1264,7 @@ describe('remote.Remote', function() {
     })
   })
 
-  describe('resolveRemoteConflict', () => {
+  describe('resolveConflict', () => {
     let remoteFile, file
     beforeEach(async function() {
       remoteFile = await builders
@@ -1281,18 +1281,18 @@ describe('remote.Remote', function() {
     it('does not fail if there are no remote documents with the given path', async function() {
       await this.remote.remoteCozy.destroyById(remoteFile._id)
 
-      await should(this.remote.resolveRemoteConflict(file)).be.fulfilled()
+      await should(this.remote.resolveConflict(file)).be.fulfilled()
     })
 
     it('renames the remote document with a conflict suffix', async function() {
-      await this.remote.resolveRemoteConflict(file)
+      await this.remote.resolveConflict(file)
       should(await this.remote.remoteCozy.find(remoteFile._id))
         .have.property('name')
         .match(CONFLICT_REGEXP)
     })
 
     it('fails with a 412 error if file changes on remote Cozy during the call', async function() {
-      // Stub findDocByPath which is called by resolveRemoteConflict so that it
+      // Stub findDocByPath which is called by resolveConflict so that it
       // returns the remote document and fakes an update closely following it.
       sinon.stub(this.remote, 'findDocByPath').callsFake(async () => {
         await builders
@@ -1303,7 +1303,7 @@ describe('remote.Remote', function() {
       })
 
       try {
-        await should(this.remote.resolveRemoteConflict(file)).be.rejectedWith({
+        await should(this.remote.resolveConflict(file)).be.rejectedWith({
           name: 'FetchError',
           status: 412
         })
@@ -1321,7 +1321,7 @@ describe('remote.Remote', function() {
         { updated_at: moreRecentDate }
       )
 
-      await this.remote.resolveRemoteConflict(file)
+      await this.remote.resolveConflict(file)
       should(await this.remote.remoteCozy.find(remoteFile._id)).have.property(
         'updated_at',
         updatedRemoteFile.updated_at

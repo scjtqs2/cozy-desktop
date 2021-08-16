@@ -7,7 +7,7 @@
  */
 
 /*::
-import type { SavedMetadata } from './metadata'
+import type { Metadata, SavedMetadata } from './metadata'
 import type { SideName } from './side'
 
 export interface Writer {
@@ -20,5 +20,6 @@ export interface Writer {
   moveAsync (doc: SavedMetadata, from: SavedMetadata): Promise<void>;
   assignNewRemote (doc: SavedMetadata): Promise<void>;
   trashAsync (doc: SavedMetadata): Promise<void>;
+  resolveConflict (doc: Metadata): Promise<*>;
 }
 */

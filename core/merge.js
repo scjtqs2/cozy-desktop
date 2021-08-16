@@ -13,6 +13,7 @@ const move = require('./move')
 const { otherSide } = require('./side')
 const logger = require('./utils/logger')
 const { isNote } = require('./utils/notes')
+const pathUtils = require('./utils/path')
 
 /*::
 import type { IdConflictInfo } from './IdConflict'
@@ -70,15 +71,33 @@ class Merge {
     side /*: SideName */,
     doc /*: Metadata */
   ) /*: Promise<Metadata> */ {
-    const dst = metadata.createConflictingDoc(doc)
-    log.warn({ path: dst.path, oldpath: doc.path }, 'Resolving conflict')
     try {
-      // $FlowFixMe
-      await this[side].moveAsync(dst, doc)
+      if (side === 'local') {
+        const localConflict = await this.local.resolveConflict(doc)
+        return localConflict
+          ? {
+              ...doc,
+              // XXX: We store the updated side metadata for reference but we
+              // will strip it before saving the doc or not save the doc at all.
+              local: localConflict,
+              path: localConflict.path
+            }
+          : doc
+      } else {
+        const remoteConflict = await this.remote.resolveConflict(doc)
+        return remoteConflict
+          ? {
+              ...doc,
+              // XXX: We store the updated side metadata for reference but we
+              // will strip it before saving the doc or not save the doc at all.
+              remote: remoteConflict,
+              path: pathUtils.remoteToLocal(remoteConflict.path)
+            }
+          : doc
+      }
     } catch (err) {
       throw err
     }
-    return dst
   }
 
   // Resolve Cozy Note conflict when its content is updated on the local
