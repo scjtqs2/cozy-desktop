@@ -436,6 +436,7 @@ class Sync {
           case syncErrors.INCOMPATIBLE_DOC_CODE:
           case syncErrors.MISSING_PERMISSIONS_CODE:
           case syncErrors.NO_DISK_SPACE_CODE:
+          case remoteErrors.CONFLICTING_NAME_CODE:
           case remoteErrors.FILE_TOO_LARGE_CODE:
           case remoteErrors.INVALID_FOLDER_MOVE_CODE:
           case remoteErrors.INVALID_METADATA_CODE:
@@ -452,44 +453,6 @@ class Sync {
             // See `default` case for other blocking errors for which we'll stop
             // retrying after 3 failed attempts.
             this.blockSyncFor({ err, change })
-            break
-          case remoteErrors.CONFLICTING_NAME_CODE:
-            /* When we fail to apply a change because of a name conflict on the
-             * remote Cozy, it means we either:
-             * 1. have another change to apply that will free the give name by
-             *    moving the document or renaming it
-             * 2. have not yet merged the remote change that took the name and
-             *    would have generated a conflict copy
-             * 3. have not merged the remote change that took the name and never
-             *    will because we abandoned that change in the past
-             *
-             * We can solve 1. by marking our local change with an increased
-             * error counter so it can be retried later, after we've applied the
-             * other changes that would free the conflicting name.
-             *
-             * We can solve 2. by blocking the Sync process until we've fetched
-             * and merged the new remote changes, thus generating a conflict
-             * copy at the Merge level.
-             *
-             * We can only solve 3. by detecting that we've tried the solutions
-             * to 1. and 2., still can't apply the given change and thus generate
-             * a remote conflict at the Sync level instead of doing it at the
-             * Merge level.
-             */
-
-            if (shouldAttemptRetry(change)) {
-              // Solve 1. & 2.
-              this.blockSyncFor({ err, change })
-            } else {
-              log.error(
-                { path, err, change },
-                'Document already exists on Cozy'
-              )
-              // Solve 3.
-              // We resolve the conflict on the remote Cozy to avoid local
-              // issues like permission issues on Windows.
-              await this.remote.resolveConflict(change.doc)
-            }
             break
           case remoteErrors.DOCUMENT_IN_TRASH_CODE:
             delete change.doc.moveFrom
@@ -922,6 +885,9 @@ class Sync {
         case 'skip':
           await syncErrors.skip(cause, this)
           break
+        case 'create-conflict':
+          await syncErrors.createConflict(cause, this)
+          break
         default:
           log.error(
             { path: cause.change && cause.change.doc.path, cmd, sentry: true },
@@ -961,6 +927,7 @@ class Sync {
         case syncErrors.INCOMPATIBLE_DOC_CODE:
         case syncErrors.MISSING_PERMISSIONS_CODE:
         case syncErrors.NO_DISK_SPACE_CODE:
+        case remoteErrors.CONFLICTING_NAME_CODE:
         case remoteErrors.FILE_TOO_LARGE_CODE:
         case remoteErrors.INVALID_METADATA_CODE:
         case remoteErrors.INVALID_NAME_CODE:

@@ -184,6 +184,22 @@ const skip = async (
   }
 }
 
+const createConflict = async (
+  cause /*: {| err: RemoteError |} | {| err: SyncError, change: Change |} */,
+  sync /*: Sync */
+) => {
+  log.debug(cause, 'user requested conflict creation')
+
+  clearInterval(sync.retryInterval)
+
+  if (cause.change) {
+    const { change, err } = cause
+    await sync.local.resolveConflict(change.doc)
+    // Skip the local dir move since it would result in the same conflict error.
+    await sync.skipChange(change, err)
+  }
+}
+
 /* This method wraps errors caught during a Sync.apply call.
  * Those errors were most probably raised from the Local or Remote side thus
  * making a SyncError type unnecessary.
@@ -226,5 +242,6 @@ module.exports = {
   retryDelay,
   retry,
   skip,
+  createConflict,
   wrapError
 }
