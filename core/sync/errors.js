@@ -22,10 +22,29 @@ const log = logger({
 const SECONDS = 1000
 const MINUTES = 60 * SECONDS
 
+const EXCLUDED_DIR_CODE = 'ExcludedDir'
 const INCOMPATIBLE_DOC_CODE = 'IncompatibleDoc'
 const MISSING_PERMISSIONS_CODE = 'MissingPermissions'
 const NO_DISK_SPACE_CODE = 'NoDiskSpace'
+const UNSYNCED_PARENT_MOVE_CODE = 'UnsyncedParentMove'
 const UNKNOWN_SYNC_ERROR_CODE = 'UnknownSyncError'
+
+class UnsyncedParentMoveError extends Error {
+  /*::
+  parent: SavedMetadata
+  */
+
+  constructor(parent /*: SavedMetadata */) {
+    super('Parent move was not successfully synchronized')
+
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, UnsyncedParentMoveError)
+    }
+
+    this.name = 'UnsyncedParentMoveError'
+    this.parent = parent
+  }
+}
 
 class SyncError extends Error {
   /*::
@@ -103,6 +122,12 @@ const retryDelay = (err /*: RemoteError|SyncError */) /*: number */ => {
 
       case NO_DISK_SPACE_CODE:
         return 1 * MINUTES
+
+      case EXCLUDED_DIR_CODE:
+        return 5 * MINUTES
+
+      case UNSYNCED_PARENT_MOVE_CODE:
+        return 0 // Don't wait since the problem is solved with the parent
 
       case remoteErrors.NO_COZY_SPACE_CODE:
         return 10 * SECONDS
@@ -195,7 +220,28 @@ const createConflict = async (
   if (cause.change) {
     const { change, err } = cause
     await sync.local.resolveConflict(change.doc)
-    // Skip the local dir move since it would result in the same conflict error.
+    // Skip the change since it would result in the same conflict error.
+    await sync.skipChange(change, err)
+  }
+}
+
+const linkDirectories = async (
+  cause /*: {| err: RemoteError |} | {| err: SyncError, change: Change |} */,
+  sync /*: Sync */
+) => {
+  log.debug(
+    cause,
+    'user requested directories linking (and re-inclusion in differential sync)'
+  )
+
+  clearInterval(sync.retryInterval)
+
+  if (cause.change) {
+    const { change, err } = cause
+    await sync.remote.includeInSync(change.doc)
+
+    // Skip the local change to avoid a conflict with the re-included
+    // remote dir.
     await sync.skipChange(change, err)
   }
 }
@@ -216,8 +262,17 @@ const wrapError = (
     return new SyncError({ sideName, err, code: MISSING_PERMISSIONS_CODE, doc })
   } else if (err.code && err.code === 'ENOSPC') {
     return new SyncError({ sideName, err, code: NO_DISK_SPACE_CODE, doc })
+  } else if (err instanceof UnsyncedParentMoveError) {
+    return new SyncError({
+      sideName,
+      err,
+      code: UNSYNCED_PARENT_MOVE_CODE,
+      doc
+    })
   } else if (err instanceof IncompatibleDocError) {
     return new SyncError({ sideName, err, code: INCOMPATIBLE_DOC_CODE, doc })
+  } else if (err instanceof remoteErrors.ExcludedDirError) {
+    return new SyncError({ sideName, err, code: EXCLUDED_DIR_CODE, doc })
   } else if (sideName === 'remote' || err.name === 'FetchError') {
     // FetchErrors can be raised from the LocalWriter when failing to download a
     // file for example. In this case the sideName will be "local" but the error
@@ -234,14 +289,18 @@ const wrapError = (
 }
 
 module.exports = {
+  EXCLUDED_DIR_CODE,
   INCOMPATIBLE_DOC_CODE,
   MISSING_PERMISSIONS_CODE,
   NO_DISK_SPACE_CODE,
   UNKNOWN_SYNC_ERROR_CODE,
+  UNSYNCED_PARENT_MOVE_CODE,
+  UnsyncedParentMoveError,
   SyncError,
   retryDelay,
   retry,
   skip,
   createConflict,
+  linkDirectories,
   wrapError
 }
